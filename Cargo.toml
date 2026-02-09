@@ -13,3 +13,14 @@ keywords = ["id", "uuid", "unique-id", "distributed", "sortable"]
 categories = ["data-structures", "algorithms", "concurrency"]
 
 [dependencies]
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "id_generation"
+harness = false
+
+[[bin]]
+name = "container_test"
+path = "src/bin/container_test.rs"

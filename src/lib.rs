@@ -21,6 +21,10 @@ pub struct IdGenerator {
     state: Mutex<GeneratorState>,
 }
 
+// Module-level generator for convenience API
+static DEFAULT_GENERATOR: std::sync::LazyLock<IdGenerator> =
+    std::sync::LazyLock::new(IdGenerator::new);
+
 impl IdGenerator {
     pub fn new() -> Self {
         let shard_id = derive_shard_id();
@@ -31,6 +35,11 @@ impl IdGenerator {
                 sequence: 0,
             }),
         }
+    }
+
+    /// Generate an ID using this instance (new ergonomic method)
+    pub fn generate(&self) -> u64 {
+        self.next_id()
     }
 
     pub fn with_shard_id(shard_id: u16) -> Self {
@@ -82,43 +91,114 @@ impl IdGenerator {
         (id & MAX_SEQUENCE) as u16
     }
 
+    /// Parse timestamp from ID (new ergonomic method)
+    pub fn parse_timestamp(id: u64) -> u64 {
+        Self::extract_timestamp(id)
+    }
+
+    /// Parse shard ID from ID (new ergonomic method)
+    pub fn parse_shard_id(id: u64) -> u16 {
+        Self::extract_shard_id(id)
+    }
+
+    /// Parse sequence from ID (new ergonomic method)
+    pub fn parse_sequence(id: u64) -> u16 {
+        Self::extract_sequence(id)
+    }
+
     pub fn shard_id(&self) -> u16 {
         self.shard_id
     }
 }
 
+// Convenience free functions for ergonomic API
+/// Generate a unique ID using default generator
+pub fn generate() -> u64 {
+    DEFAULT_GENERATOR.next_id()
+}
+
+/// Parse timestamp from ID using default generator methods
+pub fn parse_timestamp(id: u64) -> u64 {
+    IdGenerator::extract_timestamp(id)
+}
+
+/// Parse shard ID from ID using default generator methods
+pub fn parse_shard_id(id: u64) -> u16 {
+    IdGenerator::extract_shard_id(id)
+}
+
+/// Parse sequence from ID using default generator methods
+pub fn parse_sequence(id: u64) -> u16 {
+    IdGenerator::extract_sequence(id)
+}
+
 fn derive_shard_id() -> u16 {
     let mut hash: u64 = 14695981039346656037; // FNV offset basis
     const FNV_PRIME: u64 = 1099511628211;
+    let mut has_identifier = false;
 
+    // Try hostname first (most reliable in containerized environments)
     if let Ok(hostname) = std::env::var("HOSTNAME") {
+        has_identifier = true;
         for byte in hostname.bytes() {
             hash ^= byte as u64;
             hash = hash.wrapping_mul(FNV_PRIME);
         }
     }
 
+    // Try machine-id (Linux-specific, may fail in containers)
     if let Ok(machine_id) = std::fs::read_to_string("/etc/machine-id") {
+        has_identifier = true;
         for byte in machine_id.trim().bytes() {
             hash ^= byte as u64;
             hash = hash.wrapping_mul(FNV_PRIME);
         }
     }
 
+    // Always include process ID for uniqueness within the same host
     let pid = std::process::id();
     for byte in pid.to_string().bytes() {
         hash ^= byte as u64;
         hash = hash.wrapping_mul(FNV_PRIME);
     }
 
+    // If no reliable host identifier found, add randomness with fallback
+    if !has_identifier {
+        let random_value = get_fallback_random();
+
+        for byte in random_value.to_le_bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(FNV_PRIME);
+        }
+    }
+
     (hash % (MAX_SHARD_ID + 1)) as u16
 }
 
+fn get_fallback_random() -> u32 {
+    // Multi-layer fallback for random number generation
+
+    // Layer 1: System time nanoseconds
+    if let Ok(duration) = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH) {
+        return duration.subsec_nanos();
+    }
+
+    // Layer 2: Memory address of a stack variable (non-deterministic)
+    let stack_var = 0u64;
+    let stack_addr = &stack_var as *const u64 as usize;
+    return (stack_addr & 0xFFFFFFFF) as u32;
+}
+
 fn current_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .expect("Time went backwards")
-        .as_millis() as u64
+    match SystemTime::now().duration_since(UNIX_EPOCH) {
+        Ok(duration) => duration.as_millis() as u64,
+        Err(_) => {
+            // Fallback: use combination of fallback random and process start time
+            let base_time = get_fallback_random() as u64;
+            let pid_component = std::process::id() as u64;
+            base_time ^ (pid_component << 16)
+        }
+    }
 }
 
 #[cfg(test)]
@@ -202,5 +282,59 @@ mod tests {
         }
 
         assert_eq!(ids.len(), 1000, "Should have 1000 unique IDs");
+    }
+
+    #[test]
+    fn test_fallback_random() {
+        let random1 = get_fallback_random();
+        let random2 = get_fallback_random();
+
+        // Should produce some variation (not guaranteed, but highly likely)
+        assert!(
+            random1 != 0 || random2 != 0,
+            "At least one value should be non-zero"
+        );
+    }
+
+    #[test]
+    fn test_derive_shard_id_bounds() {
+        let shard1 = derive_shard_id();
+        let shard2 = derive_shard_id();
+
+        // Both should be within valid bounds
+        assert!(shard1 <= MAX_SHARD_ID as u16);
+        assert!(shard2 <= MAX_SHARD_ID as u16);
+    }
+
+    #[test]
+    fn test_ergonomic_api() {
+        // Test free functions
+        let id1 = generate();
+        let id2 = generate();
+        assert_ne!(id1, id2, "Generated IDs should be unique");
+
+        // Test parsing functions
+        let timestamp = parse_timestamp(id1);
+        let shard_id = parse_shard_id(id1);
+        let sequence = parse_sequence(id1);
+
+        // Test instance methods
+        let generator = IdGenerator::with_shard_id(123);
+        let id3 = generator.generate();
+        assert_ne!(id3, 0, "Generated ID should be non-zero");
+
+        // Test associated functions (static methods)
+        let timestamp2 = IdGenerator::parse_timestamp(id3);
+        let shard_id2 = IdGenerator::parse_shard_id(id3);
+        let sequence2 = IdGenerator::parse_sequence(id3);
+
+        // Verify consistency between old and new methods
+        assert_eq!(timestamp, IdGenerator::extract_timestamp(id1));
+        assert_eq!(shard_id, IdGenerator::extract_shard_id(id1));
+        assert_eq!(sequence, IdGenerator::extract_sequence(id1));
+
+        assert_eq!(timestamp2, IdGenerator::extract_timestamp(id3));
+        assert_eq!(shard_id2, IdGenerator::extract_shard_id(id3));
+        assert_eq!(sequence2, IdGenerator::extract_sequence(id3));
     }
 }
