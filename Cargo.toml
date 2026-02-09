@@ -1,0 +1,15 @@
+[package]
+name = "banuid"
+version = "1.0.0"
+edition = "2021"
+authors = ["Khaled Ezzughayyar <kz@khaledez.net>"]
+description = "Fast, secure, 64-bit lexicographically sortable unique identifiers"
+license = "MIT"
+repository = "https://github.com/banan-tech/banuid"
+documentation = "https://docs.rs/banuid"
+homepage = "https://github.com/banan-tech/banuid"
+readme = "README.md"
+keywords = ["id", "uuid", "unique-id", "distributed", "sortable"]
+categories = ["data-structures", "algorithms", "concurrency"]
+
+[dependencies]
