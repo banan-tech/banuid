@@ -36,10 +36,34 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-banuid = "1.0.0"
+banuid = "1.1.0"
 ```
 
 ## Usage
+
+### Simple API (Recommended)
+
+```rust
+use banuid;
+
+fn main() {
+    // Generate IDs with auto-derived shard ID - simplest approach
+    let id1 = banuid::generate();
+    let id2 = banuid::generate();
+    
+    println!("ID 1: {}", id1);
+    println!("ID 2: {}", id2);
+    
+    // Parse components using convenient free functions
+    let timestamp = banuid::parse_timestamp(id1);
+    let shard_id = banuid::parse_shard_id(id1);
+    let sequence = banuid::parse_sequence(id1);
+    
+    println!("Created at: {} ms since epoch", timestamp);
+    println!("Shard ID: {}", shard_id);
+    println!("Sequence: {}", sequence);
+}
+```
 
 ### Basic Usage (Auto-derived Shard)
 
@@ -74,11 +98,19 @@ fn main() {
 use banuid::IdGenerator;
 
 fn main() {
-    // Use specific shard ID (0-8191)
+    // Use specific shard ID (0-8191) - old API
     let generator = IdGenerator::with_shard_id(42);
     let id = generator.next_id();
     
     assert_eq!(IdGenerator::extract_shard_id(id), 42);
+    
+    // Or use the new generate() method
+    let id2 = generator.generate();
+    assert_eq!(IdGenerator::parse_shard_id(id2), 42);
+    
+    // Both extraction methods work
+    assert_eq!(IdGenerator::extract_shard_id(id2), 42);
+    assert_eq!(IdGenerator::parse_shard_id(id2), 42);
 }
 ```
 
@@ -97,7 +129,7 @@ fn main() {
     for _ in 0..10 {
         let gen = Arc::clone(&generator);
         handles.push(thread::spawn(move || {
-            (0..100).map(|_| gen.next_id()).collect::<Vec<_>>()
+            (0..100).map(|_| gen.generate()).collect::<Vec<_>>()
         }));
     }
     
@@ -112,6 +144,18 @@ fn main() {
     assert_eq!(ids.len(), 1000);
 }
 ```
+
+### API Comparison
+
+| Feature | Simple API (`banuid::generate()`) | Generator API (`IdGenerator`) |
+|---------|-----------------------------------|------------------------------|
+| **Use case** | Quick ID generation without configuration | Custom shard ID or multiple generators |
+| **Shard ID** | Auto-derived from environment | Configurable |
+| **Instance** | Single shared generator | Multiple instances allowed |
+| **Performance** | Thread-safe shared instance | Per-instance thread-safe |
+| **Syntax** | `banuid::generate()` | `generator.generate()` |
+
+Choose the simple API for most use cases. Use the generator API when you need custom shard IDs or multiple independent generators.
 
 ## How It Works
 

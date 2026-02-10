@@ -1,6 +1,6 @@
 [package]
 name = "banuid"
-version = "1.0.0"
+version = "1.1.0"
 edition = "2021"
 authors = ["Khaled Ezzughayyar <kz@khaledez.net>"]
 description = "Fast, secure, 64-bit lexicographically sortable unique identifiers"
@@ -21,6 +21,4 @@ criterion = "0.5"
 name = "id_generation"
 harness = false
 
-[[bin]]
-name = "container_test"
-path = "src/bin/container_test.rs"
+
